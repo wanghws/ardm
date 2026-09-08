@@ -1,0 +1,12 @@
+# Release artifacts
+ARDM-v*.zip
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Agent tool configs
+.claude/
+.agents/

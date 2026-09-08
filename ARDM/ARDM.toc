@@ -1,0 +1,29 @@
+## Interface: 120100
+## Title: ARDM
+## Title-zhCN: 刺杀盗贼流血监控
+## Title-zhTW: 刺殺盜賊流血監控
+## Notes: Assassination Rogue Bleed Monitor: one square per enemy nameplate, red when both Garrote and Rupture are up.
+## Notes-zhCN: 刺杀盗贼流血监控:每个敌方姓名板对应一个方格,绞喉与割裂同时存在时变红。
+## Notes-zhTW: 刺殺盜賊流血監控:每個敵方名條對應一個方格,絞喉與割裂同時存在時變紅。
+## Author: wanghwplus
+## Version: 1.0.0
+## X-Flavor: Retail
+## X-License: GPL-2.0-or-later
+## SavedVariables: ARDMDB
+## IconTexture: Interface\Icons\Ability_Rogue_Rupture
+
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.xml
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+
+Locales\enUS.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
+
+Init.lua
+Config.lua
+
+Modules\Tracker.lua
+Modules\Display.lua
+Modules\Minimap.lua
