@@ -85,6 +85,17 @@ function ns:ResetPosition()
     self:Print(self.L["MSG_RESET"])
 end
 
+function ns:ToggleCombatOnly()
+    self.db.combatOnly = not self.db.combatOnly
+    local tracker = self.modules.tracker
+    if tracker then
+        tracker:RefreshUnits()
+    else
+        self:RefreshAll()
+    end
+    self:Print(self.L[self.db.combatOnly and "MSG_COMBAT_ONLY_ON" or "MSG_COMBAT_ONLY_OFF"])
+end
+
 SLASH_ARDM1 = "/ardm"
 SlashCmdList["ARDM"] = function(msg)
     msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
@@ -94,6 +105,11 @@ SlashCmdList["ARDM"] = function(msg)
         ns:SetLocked(false)
     elseif msg == "reset" then
         ns:ResetPosition()
+    elseif msg == "probe" then
+        local tracker = ns.modules.tracker
+        if tracker then tracker:Probe() end
+    elseif msg == "combat" then
+        ns:ToggleCombatOnly()
     elseif msg == "minimap" then
         local minimap = ns.modules.minimap
         if minimap then minimap:Toggle() end

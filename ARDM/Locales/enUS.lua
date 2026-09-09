@@ -12,8 +12,10 @@ ns.locales.enUS = {
     MSG_LOCKED           = "anchor locked",
     MSG_UNLOCKED         = "anchor unlocked (drag to move)",
     MSG_RESET            = "position reset",
+    MSG_COMBAT_ONLY_ON   = "showing enemies in combat only",
+    MSG_COMBAT_ONLY_OFF  = "showing every enemy nameplate",
     MSG_MINIMAP_SHOWN    = "minimap icon shown",
     MSG_MINIMAP_HIDDEN   = "minimap icon hidden",
     MSG_NO_AURA_CONTAINER = "This client has no AuraContainer support; squares will stay white.",
-    MSG_HELP             = "commands: lock | unlock | reset | minimap | debug",
+    MSG_HELP             = "commands: lock | unlock | reset | combat | minimap | debug",
 }

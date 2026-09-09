@@ -16,6 +16,9 @@ local defaults = {
     y           = nil,
     squareSize  = 16,
     squareGap   = 4,
+    -- Only enemies that are actually fighting get a square. Idle nameplates
+    -- within range can never turn red, so they would only pad the row.
+    combatOnly  = true,
     dbVersion   = 0,
     minimap     = { hide = false },
     debug       = false,

@@ -9,7 +9,7 @@ ARDM (Assassination Rogue Bleed Monitor, shown as 刺杀盗贼流血监控 in th
 zhCN client) is a Retail World of Warcraft (12.1) addon. `ARDM` stays the
 folder name, TOC name and SavedVariable; only the displayed title and
 `L["ADDON_TITLE"]` are localised. When an Assassination Rogue is in combat it draws a horizontal row of
-16x16 squares, one per hostile nameplate. A square is white by default and turns
+16x16 squares, one per hostile nameplate that is itself in combat. A square is white by default and turns
 red when that enemy has **both** Garrote (703) and Rupture (1943) applied. A
 minimap button locks/unlocks a drag anchor.
 
@@ -68,9 +68,43 @@ nameplates and auras. It publishes into `ns.state`:
 ns.state = {
     eligible = bool,   -- Assassination Rogue
     inCombat = bool,
-    units    = {...},  -- nameplate unit tokens, oldest nameplate first
+    units    = {...},  -- tracked nameplate unit tokens, oldest first
 }
 ```
+
+Tracker keeps two sets: `plates` (every hostile nameplate on screen) and
+`tracked` (the plates that currently deserve a square). With `db.combatOnly`
+on — the default — a plate enters `tracked` only while it looks engaged, so
+idle mobs standing in range do not pad the row.
+
+Engagement requires **both** signals:
+
+- `UnitAffectingCombat(unit)` — the enemy is fighting somebody.
+- `UnitThreatSituation("player", unit) ~= nil` — the player has threat on it.
+
+The combat flag alone lets in enemies busy with somebody else's pull; threat
+alone lets in enemies whose fight the player has already left. The known cost
+of the conjunction is that **enemies which never take the combat flag never get
+a square — training dummies among them**; that is a deliberate trade, not a
+bug, and `/ardm combat` switches the filter off wholesale.
+
+`UnitAffectingCombat` is not one of the unit APIs 12.x made secret, and
+`UnitThreatSituation` is exempt for a player-against-nameplate pair
+(`SecretWhenUnitThreatStateRestricted`), but both go through the same `pcall`
+guard as `UnitCanAttack`; every predicate resolves to "show the square" when a
+comparison is refused, because a spurious square costs far less than a missing
+one.
+
+Qualifying applies immediately, disqualifying only after `COMBAT_GRACE` (5s)
+of staying disqualified. Either signal lapses on an enemy that is still the
+player's problem — a mob resets its target, a threat wipe fires, or the rogue
+Vanishes and leaves the threat table with bleeds still ticking — and dropping
+the square straight away would re-bind the slot's `AuraContainer` and hand the
+enemy a fresh `seenAt` on the way back, jumping its square to the end of the
+row. The constant is sized for Vanish (stealth window plus re-opener), not for
+flag jitter; shortening it back to ~1s re-breaks Vanish. A vanished *nameplate*
+gets no grace at all: `NAME_PLATE_UNIT_REMOVED` means dead or out of range, and
+the slot has to be freed.
 
 `Modules/Display.lua` only reads `ns.state` and renders it. Keep it that way.
 
@@ -116,9 +150,10 @@ touch nameplate frame objects.
 
 ### Square ordering
 
-Squares are ordered by when the nameplate arrived (`seenAt`, a monotonic
+Squares are ordered by when the enemy joined `tracked` (`seenAt`, a monotonic
 counter rather than `GetTime` so ties are impossible). A square therefore never
-moves while its enemy stays on screen.
+moves while its enemy keeps qualifying, and a mob that loiters on screen before
+joining the fight is appended on the right rather than inserted in the middle.
 
 Two orderings people ask for are **not implementable**, and both were tried:
 
@@ -132,12 +167,24 @@ Two orderings people ask for are **not implementable**, and both were tried:
   position works but reads as arbitrary once the camera moves, and it forced a
   timed re-sort.
 
-### Performance rules### Performance rules
+### Performance rules
 
 The renderer runs while the player is fighting, so keep these:
 
-- Nothing polls. Order changes only on `NAME_PLATE_UNIT_ADDED` /
-  `NAME_PLATE_UNIT_REMOVED`, so there is no `OnUpdate` and no timer.
+- Nothing polls. Membership changes only on `NAME_PLATE_UNIT_ADDED` /
+  `NAME_PLATE_UNIT_REMOVED` and, for the combat-state filter, on `UNIT_FLAGS` /
+  `UNIT_THREAT_LIST_UPDATE`; there is no `OnUpdate` and no ticker. Those two
+  unit events are the only signals that an enemy already on screen entered or
+  left combat, and both carry nameplate tokens. They are registered only while
+  the player is fighting, are dropped in O(1) for units that are not tracked
+  plates, and re-render only on an actual transition.
+- The one timer is the combat grace: a single one-shot `C_Timer.After` shared
+  by every pending unit, armed only when an enemy actually leaves combat and
+  re-armed only while `graceUntil` is non-empty. Grace is a constant, so
+  deadlines are created in ascending order and the earliest is always the only
+  one worth waking for. Never turn this into a per-unit timer or a ticker;
+  `scheduleGrace` / `processGrace` are pre-declared for the same reason `pcall`
+  never gets an inline closure.
 - Slots follow units, not positions. `AuraContainer:SetUnit` makes the client
   re-parse that unit's auras, so a reorder must only move anchors —
   `slotByUnit` in `Display.lua` guarantees a container is re-bound only when
@@ -183,7 +230,9 @@ user values and runs the numbered `dbVersion` migrations. Tracked spell IDs and 
 
 ## Slash commands
 
-`/ardm` toggles lock. Sub-commands: `lock`, `unlock`, `reset`, `minimap`, `debug` (event trace in chat).
+`/ardm` toggles lock. Sub-commands: `lock`, `unlock`, `reset`, `combat`
+(show every enemy nameplate vs. only those in combat), `minimap`, `debug`
+(event trace in chat).
 
 ## Release workflow
 
