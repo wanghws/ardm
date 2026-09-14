@@ -6,7 +6,7 @@
 ## Notes-zhCN: 刺杀盗贼流血监控:每个敌方姓名板对应一个方格,绞喉与割裂同时存在时变红。
 ## Notes-zhTW: 刺殺盜賊流血監控:每個敵方名條對應一個方格,絞喉與割裂同時存在時變紅。
 ## Author: wanghwplus
-## Version: 1.0.0
+## Version: 1.1.0
 ## X-Flavor: Retail
 ## X-License: GPL-2.0-or-later
 ## SavedVariables: ARDMDB
