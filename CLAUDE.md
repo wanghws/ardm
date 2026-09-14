@@ -8,8 +8,9 @@ it in the same change.
 ARDM (Assassination Rogue Bleed Monitor, shown as 刺杀盗贼流血监控 in the
 zhCN client) is a Retail World of Warcraft (12.1) addon. `ARDM` stays the
 folder name, TOC name and SavedVariable; only the displayed title and
-`L["ADDON_TITLE"]` are localised. When an Assassination Rogue is in combat it draws a horizontal row of
-16x16 squares, one per hostile nameplate that is itself in combat. A square is white by default and turns
+`L["ADDON_TITLE"]` are localised. When an Assassination Rogue is in combat it draws a grid of
+16x16 squares, eight per row and wrapping downward, one per hostile nameplate that is itself in
+combat. A square is white by default and turns
 red when that enemy has **both** Garrote (703) and Rupture (1943) applied. A
 minimap button locks/unlocks a drag anchor.
 
@@ -21,20 +22,32 @@ ardm/                            ← repo root
 ├── CHANGELOG.md                 bilingual entries per version
 ├── CLAUDE.md                    ← you are here
 ├── release.sh                   bash script → ARDM-v<VER>.zip
+├── tools/make_icon.py           rebuilds Media/Icon.tga (uv run tools/make_icon.py)
 ├── .claude/commands/release.md  Claude command that drives releases
 └── ARDM/                        ← shippable addon folder
     ├── ARDM.toc                 load order lives here
     ├── Init.lua                 ns namespace, locale metatable, /ardm slash
     ├── Config.lua               tracked spell IDs, spec ID, SavedVariables defaults
     ├── Locales/                 enUS.lua (default), zhCN.lua, zhTW.lua
+    ├── Media/Icon.tga           addon-list + minimap icon (generated, see below)
     ├── Modules/
     │   ├── Tracker.lua          game state: spec, combat, nameplates, DoT check
-    │   ├── Display.lua          square row + drag anchor
+    │   ├── Display.lua          square grid + drag anchor
     │   └── Minimap.lua          LibDBIcon launcher
     └── Libs/                    LibStub, CallbackHandler, LibDataBroker, LibDBIcon
 ```
 
 Only the inner `ARDM/` folder ships; `release.sh` packages nothing else.
+
+### Icon
+
+`Media/Icon.tga` is the game's own Garrote and Rupture icons split along the
+top-left → bottom-right diagonal, built by `tools/make_icon.py` from the
+client's BLPs (FileDataIDs 132297 / 132302, fetched from wago.tools). Edit the
+script and re-run it rather than editing the TGA by hand. It is referenced by
+`## IconTexture` in the TOC and by the LibDBIcon launcher in `Minimap.lua`; keep
+the two paths identical. Addon textures must be BLP or TGA, and the client only
+notices a *new* texture file after a full restart — `/reload` is not enough.
 
 ## Load order (from `.toc`)
 
@@ -75,7 +88,7 @@ ns.state = {
 Tracker keeps two sets: `plates` (every hostile nameplate on screen) and
 `tracked` (the plates that currently deserve a square). With `db.combatOnly`
 on — the default — a plate enters `tracked` only while it looks engaged, so
-idle mobs standing in range do not pad the row.
+idle mobs standing in range do not pad the grid.
 
 Engagement requires **both** signals:
 
@@ -101,7 +114,7 @@ player's problem — a mob resets its target, a threat wipe fires, or the rogue
 Vanishes and leaves the threat table with bleeds still ticking — and dropping
 the square straight away would re-bind the slot's `AuraContainer` and hand the
 enemy a fresh `seenAt` on the way back, jumping its square to the end of the
-row. The constant is sized for Vanish (stealth window plus re-opener), not for
+grid. The constant is sized for Vanish (stealth window plus re-opener), not for
 flag jitter; shortening it back to ~1s re-breaks Vanish. A vanished *nameplate*
 gets no grace at all: `NAME_PLATE_UNIT_REMOVED` means dead or out of range, and
 the slot has to be freed.
@@ -153,7 +166,10 @@ touch nameplate frame objects.
 Squares are ordered by when the enemy joined `tracked` (`seenAt`, a monotonic
 counter rather than `GetTime` so ties are impossible). A square therefore never
 moves while its enemy keeps qualifying, and a mob that loiters on screen before
-joining the fight is appended on the right rather than inserted in the middle.
+joining the fight is appended at the end rather than inserted in the middle.
+Squares fill `db.columns` (8) per row left to right, then wrap onto a new row
+below; when an earlier enemy leaves, later squares shift back one place and
+may move up a row.
 
 Two orderings people ask for are **not implementable**, and both were tried:
 
@@ -196,7 +212,7 @@ The renderer runs while the player is fighting, so keep these:
   (`CustomAuraContainerConstants.FrameCreationBatchSize`; the table is not
   exported to `_G`, so addons cannot lower it, and `maxFrameCount` caps only
   how many are *active*). Containers are therefore built on first bind, not
-  with the slot — the unlocked preview row must never create one — and slots
+  with the slot — the unlocked preview squares must never create one — and slots
   are never destroyed once created.
 
 ### Localisation
@@ -207,20 +223,25 @@ Missing keys render as the key itself so they are visible in-game.
 
 ### Anchoring
 
-The row is anchored by its **left edge** (`LEFT` to UIParent's `BOTTOMLEFT`),
-never by its centre: `setRowWidth` changes the frame's width every time the
-enemy count changes, and a centre anchor would slide every existing square
-sideways. `db.x`/`db.y` store that left edge in UIParent coordinates and are
-`nil` until the frame is first placed, so `defaultPosition` can pick something
-that suits the current resolution. `SetClampedToScreen` is deliberately off —
-it would move the anchor as soon as the row grew past the screen edge — and
-`savePosition` clamps into the screen on drag release instead.
+The grid is anchored by its **top-left corner** (`TOPLEFT` to UIParent's
+`BOTTOMLEFT`), never by its centre: `setGridSize` changes the frame's width and
+height every time the enemy count changes, and any other anchor point would
+slide every existing square. `db.x`/`db.y` store that corner in UIParent
+coordinates and are `nil` until the frame is first placed, so `defaultPosition`
+can pick something that suits the current resolution. The unlocked preview
+shows one full row, because a full row is the widest the grid ever gets.
+`SetClampedToScreen` is deliberately off — it would move the anchor as soon as
+the grid grew past the screen edge — and `savePosition` clamps on drag release
+instead: a full row is kept on screen horizontally, but only the first row
+vertically, since the height depends on how many enemies are engaged.
 
 ### Config
 
 Single SavedVariable `ARDMDB`, accessed via `ns.db`. Defaults live in
 `Config.lua`; `ns:InitializeDB()` fills in missing keys without overwriting
 user values and runs the numbered `dbVersion` migrations. Tracked spell IDs and the spec ID also live in `Config.lua`.
+`squareSize`, `squareGap` and `columns` have no in-game UI and are only meant
+to change between sessions: slots cache their size and grid position.
 
 ### Code style
 
@@ -232,7 +253,8 @@ user values and runs the numbered `dbVersion` migrations. Tracked spell IDs and 
 
 `/ardm` toggles lock. Sub-commands: `lock`, `unlock`, `reset`, `combat`
 (show every enemy nameplate vs. only those in combat), `minimap`, `debug`
-(event trace in chat).
+(event trace in chat), `probe` (one-shot dump of what the client returns for
+each nameplate).
 
 ## Release workflow
 

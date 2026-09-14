@@ -17,5 +17,5 @@ ns.locales.enUS = {
     MSG_MINIMAP_SHOWN    = "minimap icon shown",
     MSG_MINIMAP_HIDDEN   = "minimap icon hidden",
     MSG_NO_AURA_CONTAINER = "This client has no AuraContainer support; squares will stay white.",
-    MSG_HELP             = "commands: lock | unlock | reset | combat | minimap | debug",
+    MSG_HELP             = "commands: lock | unlock | reset | combat | minimap | debug | probe",
 }

@@ -10,7 +10,7 @@
 ## X-Flavor: Retail
 ## X-License: GPL-2.0-or-later
 ## SavedVariables: ARDMDB
-## IconTexture: Interface\Icons\Ability_Rogue_Rupture
+## IconTexture: Interface\AddOns\ARDM\Media\Icon
 
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.xml

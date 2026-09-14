@@ -11,18 +11,18 @@ named `ARDM`; the addon list shows the localised name.
   specialization. Other classes/specs see nothing.
 - **Combat only** — appears when you enter combat and hides when you leave.
 - **One square per enemy in combat** — a 16x16 white square for every hostile
-  nameplate whose enemy is fighting, laid out left to right with spacing, in
+  nameplate whose enemy is fighting, eight per row and wrapping downward, in
   the order they joined the fight — a square never moves while its enemy stays
   engaged. An enemy counts as engaged only while it is in combat **and** you
-  hold threat on it, so the row stays limited to your own fight. Idle enemies,
+  hold threat on it, so the grid stays limited to your own fight. Idle enemies,
   other people's pulls and targets that never take the combat flag (training
-  dummies) are skipped; `/ardm combat` turns the filter off. The row is pinned
-  by its left edge and grows right.
+  dummies) are skipped; `/ardm combat` turns the filter off. The grid is pinned
+  by its top-left corner and grows right, then down.
 - **DoT status** — a square turns red when the enemy has both
   Garrote (spell 703) and Rupture (spell 1943) applied.
 - **Minimap button** — left-click locks/unlocks the anchor, right-click resets
-  the position. While unlocked a drag handle and a preview row are shown so
-  you can place the frame out of combat.
+  the position. While unlocked a drag handle and one full preview row are
+  shown so you can place the frame out of combat.
 - **Localised** — English, Simplified Chinese, Traditional Chinese.
 
 ## Slash commands
@@ -35,6 +35,7 @@ named `ARDM`; the addon list shows the localised name.
 | `/ardm combat` | Toggle between enemies in combat only and every enemy nameplate |
 | `/ardm minimap` | Show / hide the minimap button |
 | `/ardm debug` | Toggle event trace in chat (for bug reports) |
+| `/ardm probe` | Print what the client reports for every enemy nameplate (for bug reports) |
 
 ## Installation
 
@@ -63,14 +64,14 @@ addon only controls how it looks, never what it knows.
 - **仅刺杀专精** — 只在盗贼的刺杀专精下启用,其他职业/专精不显示任何内容。
 - **仅战斗中显示** — 进入战斗显示,脱离战斗隐藏。
 - **每个战斗中的敌人一个方格** — 处于战斗中的敌对姓名板各对应一个 16x16 白色
-  方格,从左向右横向排列,带间距,按加入战斗的先后顺序排列——敌人只要还在
+  方格,每行 8 个,排满后向下换行,按加入战斗的先后顺序排列——敌人只要还在
   战斗中,它的方格就不会移动。敌人必须**同时**处于战斗中且你对它有仇恨才算
-  交战,因此整行只包含你自己在打的目标。发呆的怪、别人在打的怪,以及从不带
+  交战,因此方格只包含你自己在打的目标。发呆的怪、别人在打的怪,以及从不带
   战斗标志的目标(训练假人)都不会占位;可用 `/ardm combat` 关闭该过滤。
-  整行以左端为锚点固定,向右增长。
+  方格以左上角为锚点固定,先向右、再向下增长。
 - **DoT 状态** — 敌人同时带有绞喉(法术 703)与割裂(法术 1943)时方格变红。
 - **小地图按钮** — 左键锁定/解锁锚点,右键重置位置。解锁时会显示拖动手柄和
-  预览方格,方便在非战斗状态下调整位置。
+  一整行预览方格,方便在非战斗状态下调整位置。
 - **多语言** — 英文、简体中文、繁体中文。
 
 ## 命令
@@ -83,6 +84,7 @@ addon only controls how it looks, never what it knows.
 | `/ardm combat` | 在「仅战斗中的敌人」与「全部敌方姓名板」之间切换 |
 | `/ardm minimap` | 显示 / 隐藏小地图按钮 |
 | `/ardm debug` | 切换聊天框事件日志(用于报错排查) |
+| `/ardm probe` | 在聊天框输出客户端对每个敌方姓名板的原始返回值(用于报错排查) |
 
 ## 安装
 

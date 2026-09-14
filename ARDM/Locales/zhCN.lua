@@ -15,5 +15,5 @@ ns.locales.zhCN = {
     MSG_MINIMAP_SHOWN    = "已显示小地图按钮",
     MSG_MINIMAP_HIDDEN   = "已隐藏小地图按钮",
     MSG_NO_AURA_CONTAINER = "当前客户端不支持 AuraContainer,方格将保持白色。",
-    MSG_HELP             = "命令:lock | unlock | reset | combat | minimap | debug",
+    MSG_HELP             = "命令:lock | unlock | reset | combat | minimap | debug | probe",
 }

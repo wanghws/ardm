@@ -27,7 +27,7 @@ local MAX_NAMEPLATES = 40
 -- Vanishes and drops off the threat table with bleeds still ticking. Dropping
 -- the square straight away would re-bind the slot's AuraContainer and, worse,
 -- hand the enemy a fresh `seenAt` on the way back, jumping its square to the
--- end of the row. Disengagement is therefore only honoured after the enemy has
+-- end of the grid. Disengagement is therefore only honoured after the enemy has
 -- stayed disengaged this long; re-qualifying in the meantime costs nothing.
 --
 -- Sized for Vanish rather than for flag jitter: the stealth window plus the
@@ -116,7 +116,7 @@ end
 -- A unit earns a square only while it is fighting *and* the player holds
 -- threat on it. The combat flag alone lets in enemies busy with somebody
 -- else's pull; threat alone lets in enemies whose fight the player has already
--- left. Requiring both narrows the row to the player's own fight, at the cost
+-- left. Requiring both narrows the grid to the player's own fight, at the cost
 -- of enemies that never take the combat flag — training dummies among them.
 --
 -- UnitAffectingCombat is not among the unit APIs 12.x made secret and

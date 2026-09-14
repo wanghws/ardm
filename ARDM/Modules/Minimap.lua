@@ -11,7 +11,7 @@ function M:OnDBReady()
     local L = ns.L
     self.launcher = LDB:NewDataObject(addonName, {
         type  = "launcher",
-        icon  = [[Interface\Icons\Ability_Rogue_Rupture]],
+        icon  = [[Interface\AddOns\ARDM\Media\Icon]],
         label = L["ADDON_TITLE"],
         OnClick = function(_, button)
             if button == "RightButton" then

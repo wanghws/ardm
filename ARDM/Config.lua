@@ -8,16 +8,18 @@ ns.ASSASSINATION_SPEC_ID = 259
 
 local defaults = {
     locked      = true,
-    -- Left edge of the row, in UIParent coordinates from the bottom-left of
-    -- the screen. nil means "not placed yet"; Display.lua picks a default that
-    -- suits the current resolution. The row always grows to the right from
-    -- here, so the anchor never moves as enemies come and go.
+    -- Top-left corner of the grid, in UIParent coordinates from the
+    -- bottom-left of the screen. nil means "not placed yet"; Display.lua picks
+    -- a default that suits the current resolution. The grid always grows right
+    -- and then down from here, so the anchor never moves as enemies come and go.
     x           = nil,
     y           = nil,
     squareSize  = 16,
     squareGap   = 4,
+    -- Squares per row; the grid wraps onto a new row below after this many.
+    columns     = 8,
     -- Only enemies that are actually fighting get a square. Idle nameplates
-    -- within range can never turn red, so they would only pad the row.
+    -- within range can never turn red, so they would only pad the grid.
     combatOnly  = true,
     dbVersion   = 0,
     minimap     = { hide = false },
@@ -51,6 +53,13 @@ function ns:InitializeDB()
         ARDMDB.x     = nil
         ARDMDB.y     = nil
         ARDMDB.dbVersion = 2
+    end
+
+    -- v3 moved the anchor from the row's vertical centre to the grid's top
+    -- edge; a single row is one square tall, so the old centre converts exactly.
+    if ARDMDB.dbVersion < 3 then
+        if ARDMDB.y then ARDMDB.y = ARDMDB.y + ARDMDB.squareSize / 2 end
+        ARDMDB.dbVersion = 3
     end
     self.db = ARDMDB
 end

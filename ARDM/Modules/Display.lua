@@ -1,7 +1,7 @@
 local addonName, ns = ...
 
--- Display renders ns.state as a horizontal row of squares and owns the drag
--- anchor shown while unlocked.
+-- Display renders ns.state as a grid of squares, db.columns wide and wrapping
+-- downward, and owns the drag anchor shown while unlocked.
 --
 -- How the red state works without reading aura data (12.x secret values):
 -- each square is a white texture with a clipping frame on top. Inside the
@@ -19,7 +19,6 @@ ns:RegisterModule("display", M)
 
 local WHITE = { 1, 1, 1, 1 }
 local RED   = { 1, 0.15, 0.15, 1 }
-local PREVIEW_COUNT = 5   -- squares shown while unlocked so the position is visible out of combat
 
 -- Every visible region bleeds this far past the clipping frame on all sides.
 -- The clip rect is then the single thing that defines a square's edges, so the
@@ -46,13 +45,17 @@ local slotByUnit = {}   -- [unit] = slot
 local unitSet    = {}   -- scratch: units present in the current render
 local freeSlots  = {}   -- scratch: slots not currently bound to a unit
 
--- The row is anchored by its left edge only, so adding squares always extends
--- it to the right instead of pushing the existing ones sideways. Screen
--- clamping happens on release rather than through SetClampedToScreen, which
--- would shift the anchor whenever the row grew past the screen edge.
+-- Length covered by n squares laid side by side, for either axis.
+local function span(n)
+    return n * ns.db.squareSize + (n - 1) * ns.db.squareGap
+end
+
+-- The grid is anchored by its top-left corner only, so adding squares always
+-- extends it right and then down instead of pushing the existing ones around.
+-- Screen clamping happens on release rather than through SetClampedToScreen,
+-- which would shift the anchor whenever the grid grew past the screen edge.
 local function defaultPosition()
-    local width = PREVIEW_COUNT * ns.db.squareSize + (PREVIEW_COUNT - 1) * ns.db.squareGap
-    return (GetScreenWidth() - width) / 2, GetScreenHeight() / 2 - 120
+    return (GetScreenWidth() - span(ns.db.columns)) / 2, GetScreenHeight() / 2 - 120
 end
 
 local function applyPosition()
@@ -60,18 +63,18 @@ local function applyPosition()
         ns.db.x, ns.db.y = defaultPosition()
     end
     root:ClearAllPoints()
-    root:SetPoint("LEFT", UIParent, "BOTTOMLEFT", ns.db.x, ns.db.y)
+    root:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", ns.db.x, ns.db.y)
 end
 
+-- A full row is the widest the grid ever gets, so all of it is kept on screen.
+-- The height depends on how many enemies are engaged, so only the first row is.
 local function savePosition()
-    local left = root:GetLeft()
-    local _, centreY = root:GetCenter()
-    if not left or not centreY then return end
+    local left, top = root:GetLeft(), root:GetTop()
+    if not left or not top then return end
 
-    local scale  = root:GetEffectiveScale() / UIParent:GetEffectiveScale()
-    local size   = ns.db.squareSize
-    ns.db.x = math.max(0, math.min(left * scale, GetScreenWidth() - size))
-    ns.db.y = math.max(size / 2, math.min(centreY * scale, GetScreenHeight() - size / 2))
+    local scale = root:GetEffectiveScale() / UIParent:GetEffectiveScale()
+    ns.db.x = math.max(0, math.min(left * scale, GetScreenWidth() - span(ns.db.columns)))
+    ns.db.y = math.max(ns.db.squareSize, math.min(top * scale, GetScreenHeight()))
 end
 
 -- ---------------------------------------------------------------------------
@@ -149,8 +152,8 @@ local function createContainer(clip, size)
 end
 
 -- Containers are built on first use rather than with the slot: each one
--- allocates a fixed batch of aura buttons, and the preview row shown while the
--- frame is unlocked never needs one.
+-- allocates a fixed batch of aura buttons, and the preview squares shown while
+-- the frame is unlocked never need one.
 local function ensureContainer(slot)
     if slot.containerTried then return slot.container end
     slot.containerTried = true
@@ -196,7 +199,7 @@ local function createFrames()
     root:SetFrameStrata("MEDIUM")
     root:SetMovable(true)
 
-    -- The anchor is a translucent handle drawn over the square row; it is the
+    -- The anchor is a translucent handle drawn over the square grid; it is the
     -- only part that receives mouse input, and it is shown only while unlocked.
     anchor = CreateFrame("Frame", nil, root)
     anchor:SetPoint("TOPLEFT", root, "TOPLEFT", -6, 16)
@@ -253,9 +256,11 @@ local function placeSlot(slot, i)
     if slot.index == i then return end
     slot.index = i
 
-    local size, gap = ns.db.squareSize, ns.db.squareGap
+    local pitch   = ns.db.squareSize + ns.db.squareGap
+    local columns = ns.db.columns
     slot.clip:ClearAllPoints()
-    slot.clip:SetPoint("LEFT", root, "LEFT", (i - 1) * (size + gap), 0)
+    slot.clip:SetPoint("TOPLEFT", root, "TOPLEFT",
+        ((i - 1) % columns) * pitch, -math.floor((i - 1) / columns) * pitch)
 end
 
 local function hideSlot(slot)
@@ -280,10 +285,13 @@ local function reclaimSlots()
     end
 end
 
-local function setRowWidth(count)
-    local size, gap = ns.db.squareSize, ns.db.squareGap
-    local width = count > 0 and (count * size + (count - 1) * gap) or size
-    root:SetSize(width, size)
+local function setGridSize(count)
+    if count == 0 then
+        root:SetSize(ns.db.squareSize, ns.db.squareSize)
+        return
+    end
+    local columns = ns.db.columns
+    root:SetSize(span(math.min(count, columns)), span(math.ceil(count / columns)))
 end
 
 local function render()
@@ -299,7 +307,8 @@ local function render()
     if state.inCombat then
         count = #state.units
     elseif unlocked then
-        count = PREVIEW_COUNT
+        -- One full row: the widest the grid gets, which is what placement needs.
+        count = ns.db.columns
     else
         for i = 1, #pool do hideSlot(pool[i]) end
         root:Hide()
@@ -340,7 +349,7 @@ local function render()
         hideSlot(freeSlots[i])
     end
 
-    setRowWidth(count)
+    setGridSize(count)
     anchor:SetShown(unlocked)
     root:Show()
 end
