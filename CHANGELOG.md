@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.1.0
+
+- Adds that a boss summons now get a square: an enemy that appears before it
+  can be attacked is picked up the moment it becomes attackable instead of being
+  ignored until its nameplate reappears. During a boss encounter the threat
+  requirement is dropped, so any attackable enemy in combat gets a square even
+  before you hit it or when it ignores threat; outside encounters nothing changes.
+- 首领召唤的仆从现在会显示方格:刷出时还不能攻击的敌人,一变为可攻击就会被
+  收录,不再一直被忽略到姓名板重新出现。首领战期间不再要求仇恨,只要敌人可攻击
+  且处于战斗中就显示方格,即使你还没打到它或它不吃仇恨;首领战以外行为不变。
+
 ## v1.0.0
 
 - First release. While an Assassination Rogue is in combat, ARDM draws a 16x16
