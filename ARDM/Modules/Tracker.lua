@@ -15,12 +15,17 @@ ns.state = {
 }
 local state = ns.state
 
-local plates     = {}   -- [unit] = true: hostile nameplate on screen
+local plates     = {}   -- [unit] = true: nameplate on screen, hostile or not
 local tracked    = {}   -- [unit] = true: plate that currently deserves a square
 local seenAt     = {}   -- [unit] = order in which the unit entered `tracked`
 local graceUntil = {}   -- [unit] = GetTime() after which a lapsed plate is dropped
 local arrivals   = 0    -- monotonic counter; ties are impossible, unlike GetTime
+local inEncounter = false  -- boss encounter in progress; see isFighting
 local MAX_NAMEPLATES = 40
+
+-- Built once so that sweeping every plate in token order allocates nothing.
+local PLATE_TOKENS = {}
+for i = 1, MAX_NAMEPLATES do PLATE_TOKENS[i] = "nameplate" .. i end
 
 -- Either engagement signal can lapse while the enemy is still very much the
 -- player's problem: a mob resets its target, a threat wipe fires, or the rogue
@@ -91,6 +96,8 @@ local function isTrue(value)
 end
 
 -- Friendly nameplates (if the user enabled them) should not get a square.
+-- UnitCanAttack is also false for an enemy that cannot be attacked *yet*, so
+-- the answer is only valid until the next UNIT_FLAGS / UNIT_FACTION.
 local function isHostile(unit)
     local ok, canAttack = pcall(UnitCanAttack, "player", unit)
     if not ok then return true end
@@ -119,6 +126,13 @@ end
 -- left. Requiring both narrows the grid to the player's own fight, at the cost
 -- of enemies that never take the combat flag — training dummies among them.
 --
+-- During a boss encounter the threat half is waived. Boss summons are the
+-- enemies it misses: many have no threat table at all (fixating adds, spawns
+-- that ignore threat), and the rest only list the player after the first hit,
+-- which is exactly when a white square would have been useful. The waiver is
+-- safe there because an encounter is one fight — every enemy in combat during
+-- it belongs to it — so there is no somebody-else's-pull to keep out.
+--
 -- UnitAffectingCombat is not among the unit APIs 12.x made secret and
 -- UnitThreatSituation is exempt for a player-against-nameplate pair, but both
 -- go through the same guarded path as everything else, so a future restriction
@@ -128,7 +142,21 @@ local function isFighting(unit)
     local ok, affectingCombat = pcall(UnitAffectingCombat, unit)
     if not ok then return true end
     if not isTrue(affectingCombat) then return false end
+    if inEncounter then return true end
     return hasThreat(unit)
+end
+
+-- Hostility gates entry into the tracked set but never exit from it. Boss
+-- summons routinely arrive unattackable — a spawn animation, an immunity
+-- window, a neutral faction that flips once they engage — so a plate that
+-- fails the hostility check is kept in `plates` and gets another chance on
+-- every flag or faction change. The reverse does not hold: an enemy already
+-- being bled that turns unattackable mid-fight is in an intermission, not out
+-- of the fight, and dropping it would jump its square to the end of the grid
+-- when it comes back. Leaving is decided by engagement alone, through grace.
+local function qualifies(unit)
+    if tracked[unit] then return isFighting(unit) end
+    return isHostile(unit) and isFighting(unit)
 end
 
 -- Debug only. Renders a value that may be secret, forbidden or absent without
@@ -194,10 +222,8 @@ end
 
 local function addUnit(unit)
     if plates[unit] then return end
-    if not isHostile(unit) then return end
-
     plates[unit] = true
-    if setTracked(unit, isFighting(unit)) then rebuildUnitList() end
+    if setTracked(unit, qualifies(unit)) then rebuildUnitList() end
 end
 
 -- A vanished nameplate gets no grace: unlike a lapsed combat flag it means the
@@ -221,7 +247,7 @@ local function processGrace()
 
     local now, soonest, changed = GetTime(), nil, false
     for unit, deadline in pairs(graceUntil) do
-        if not plates[unit] or isFighting(unit) then
+        if not plates[unit] or qualifies(unit) then
             graceUntil[unit] = nil          -- back in the fight, or plate gone
         elseif deadline <= now then
             graceUntil[unit] = nil
@@ -245,15 +271,16 @@ function scheduleGrace(delay)
     C_Timer.After(delay, processGrace)
 end
 
--- An enemy's combat state changes long after its nameplate appeared, so the
--- tracked set is re-checked whenever the client reports new flags or threat
--- for a plate we already know about. Entering combat is applied immediately;
--- leaving it only starts the grace clock. Returns whether the visible list
--- changed, so the caller only re-renders on a real transition.
+-- An enemy's combat state and attackability change long after its nameplate
+-- appeared, so the tracked set is re-checked whenever the client reports new
+-- flags, faction or threat for a plate we already know about. Qualifying is
+-- applied immediately; disqualifying only starts the grace clock. Returns
+-- whether the visible list changed, so the caller only re-renders on a real
+-- transition.
 local function refreshUnit(unit)
     if not plates[unit] then return false end
 
-    if not isFighting(unit) then
+    if not qualifies(unit) then
         if not tracked[unit] or graceUntil[unit] then return false end
         graceUntil[unit] = GetTime() + COMBAT_GRACE
         scheduleGrace(COMBAT_GRACE)
@@ -277,13 +304,12 @@ local function syncUnitsFromNameplates()
     wipe(seenAt)
     wipe(graceUntil)
     local plateCount = 0
-    for i = 1, MAX_NAMEPLATES do
-        local unit = "nameplate" .. i
+    for _, unit in ipairs(PLATE_TOKENS) do
         local ok, exists = pcall(UnitExists, unit)
-        if ok and exists and isHostile(unit) then
+        if ok and exists then
             plates[unit] = true
             plateCount = plateCount + 1
-            if isFighting(unit) then
+            if qualifies(unit) then
                 arrivals = arrivals + 1
                 tracked[unit] = true
                 seenAt[unit] = arrivals
@@ -291,7 +317,7 @@ local function syncUnitsFromNameplates()
         end
     end
     rebuildUnitList()
-    ns:Debug("sync: %d of %d hostile nameplate(s) tracked", #state.units, plateCount)
+    ns:Debug("sync: %d of %d nameplate(s) tracked", #state.units, plateCount)
 end
 
 -- ---------------------------------------------------------------------------
@@ -301,13 +327,14 @@ end
 local frame = CreateFrame("Frame")
 
 -- UNIT_FLAGS and UNIT_THREAT_LIST_UPDATE are the only signals that an enemy
--- already on screen entered or left combat, and both carry nameplate tokens.
--- They are registered only while the player is fighting: nothing is rendered
+-- already on screen entered or left combat; UNIT_FLAGS and UNIT_FACTION are the
+-- only ones that it became attackable. All three carry nameplate tokens. They
+-- are registered only while the player is fighting: nothing is rendered
 -- outside combat, and combat start re-syncs every plate anyway.
-local COMBAT_STATE_EVENTS = { "UNIT_FLAGS", "UNIT_THREAT_LIST_UPDATE" }
+local UNIT_STATE_EVENTS = { "UNIT_FLAGS", "UNIT_FACTION", "UNIT_THREAT_LIST_UPDATE" }
 
-local function setCombatStateEvents(enabled)
-    for _, event in ipairs(COMBAT_STATE_EVENTS) do
+local function setUnitStateEvents(enabled)
+    for _, event in ipairs(UNIT_STATE_EVENTS) do
         if enabled then
             frame:RegisterEvent(event)
         else
@@ -316,16 +343,52 @@ local function setCombatStateEvents(enabled)
     end
 end
 
+-- Only consulted when the ENCOUNTER_* events cannot have been seen: after a
+-- /reload or a loading screen that lands mid-encounter, or a spec change that
+-- only now registered them. 12.x moved the query
+-- into C_InstanceEncounter; the global is the pre-12 spelling. A refused
+-- answer keeps the threat filter on rather than lifting it everywhere.
+local function encounterInProgress()
+    local query = (C_InstanceEncounter and C_InstanceEncounter.IsEncounterInProgress)
+               or IsEncounterInProgress
+    if not query then return false end
+    local ok, active = pcall(query)
+    if not ok then return false end
+    return isTrue(active)
+end
+
+-- Entering or leaving an encounter changes which plates qualify without any
+-- unit event firing, so every known plate is re-checked. Outside combat nothing
+-- is rendered and combat start re-syncs every plate anyway. Leaving goes
+-- through grace like any other disqualification.
+--
+-- The sweep walks tokens in order rather than `pairs(plates)`: adds that
+-- qualify together are stamped with consecutive `seenAt` values here, and hash
+-- order would scramble them for the rest of the fight. Token order is what
+-- syncUnitsFromNameplates uses for the same situation.
+local function setEncounter(active)
+    if active == inEncounter then return end
+    inEncounter = active
+    ns:Debug("encounter %s", active and "start" or "end")
+    if not state.inCombat then return end
+
+    local changed = false
+    for _, unit in ipairs(PLATE_TOKENS) do
+        if refreshUnit(unit) then changed = true end
+    end
+    if changed then render() end
+end
+
 local function onCombatStart()
     state.inCombat = true
     syncUnitsFromNameplates()
-    setCombatStateEvents(true)
+    setUnitStateEvents(true)
     ns:RefreshAll()
 end
 
 local function onCombatEnd()
     state.inCombat = false
-    setCombatStateEvents(false)
+    setUnitStateEvents(false)
     wipe(graceUntil)
     ns:RefreshAll()
 end
@@ -352,19 +415,29 @@ function handlers.NAME_PLATE_UNIT_REMOVED(unit)
     if state.inCombat then render() end
 end
 
-local function onUnitCombatStateChanged(unit)
+local function onUnitStateChanged(unit)
     if ns.db.debug and plates[unit] then
-        ns:Debug("event %s affectingCombat=%s threat=%s", unit,
+        ns:Debug("event %s canAttack=%s affectingCombat=%s threat=%s", unit,
+            rawCall(UnitCanAttack, "player", unit),
             rawCall(UnitAffectingCombat, unit),
             rawCall(UnitThreatSituation, "player", unit))
     end
     if not refreshUnit(unit) then return end
-    ns:Debug("combat state %s -> %d unit(s)", unit, #state.units)
+    ns:Debug("unit state %s -> %d unit(s)", unit, #state.units)
     render()
 end
 
-handlers.UNIT_FLAGS              = onUnitCombatStateChanged
-handlers.UNIT_THREAT_LIST_UPDATE = onUnitCombatStateChanged
+handlers.UNIT_FLAGS              = onUnitStateChanged
+handlers.UNIT_FACTION            = onUnitStateChanged
+handlers.UNIT_THREAT_LIST_UPDATE = onUnitStateChanged
+
+function handlers.ENCOUNTER_START()
+    setEncounter(true)
+end
+
+function handlers.ENCOUNTER_END()
+    setEncounter(false)
+end
 
 function handlers.PLAYER_SPECIALIZATION_CHANGED(unit)
     if unit == nil or unit == "player" then
@@ -373,6 +446,7 @@ function handlers.PLAYER_SPECIALIZATION_CHANGED(unit)
 end
 
 function handlers.PLAYER_ENTERING_WORLD()
+    inEncounter = encounterInProgress()
     M:UpdateEligibility()
     if UnitAffectingCombat("player") then
         onCombatStart()
@@ -394,6 +468,9 @@ function M:ApplyEventRegistration()
         frame:RegisterEvent("PLAYER_REGEN_ENABLED")
         frame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
         frame:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
+        frame:RegisterEvent("ENCOUNTER_START")
+        frame:RegisterEvent("ENCOUNTER_END")
+        inEncounter = encounterInProgress()
         syncUnitsFromNameplates()
         if UnitAffectingCombat("player") then onCombatStart() end
     else
@@ -401,6 +478,9 @@ function M:ApplyEventRegistration()
         frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
         frame:UnregisterEvent("NAME_PLATE_UNIT_ADDED")
         frame:UnregisterEvent("NAME_PLATE_UNIT_REMOVED")
+        frame:UnregisterEvent("ENCOUNTER_START")
+        frame:UnregisterEvent("ENCOUNTER_END")
+        inEncounter = false
         wipe(plates)
         wipe(tracked)
         wipe(seenAt)
@@ -414,20 +494,22 @@ end
 -- every nameplate token so a filter that hides everything can be told apart
 -- from a client that simply never reports enemy combat state.
 function M:Probe()
-    ns:Print(("combatOnly=%s inCombat=%s eligible=%s tracked=%d")
+    ns:Print(("combatOnly=%s inCombat=%s encounter=%s eligible=%s tracked=%d")
         :format(tostring(ns.db.combatOnly), tostring(state.inCombat),
-                tostring(state.eligible), #state.units))
-    for i = 1, MAX_NAMEPLATES do
-        local unit = "nameplate" .. i
+                tostring(inEncounter), tostring(state.eligible), #state.units))
+    for _, unit in ipairs(PLATE_TOKENS) do
         local ok, exists = pcall(UnitExists, unit)
         if ok and exists then
-            ns:Print(("%s canAttack=%s affectingCombat=%s threat=%s hostile=%s fighting=%s tracked=%s")
+            -- `qualifies` is the verdict that actually applies: a tracked unit
+            -- skips the hostility check, so hostile=false tracked=true is valid.
+            ns:Print(("%s canAttack=%s affectingCombat=%s threat=%s hostile=%s fighting=%s qualifies=%s tracked=%s")
                 :format(unit,
                         rawCall(UnitCanAttack, "player", unit),
                         rawCall(UnitAffectingCombat, unit),
                         rawCall(UnitThreatSituation, "player", unit),
                         tostring(isHostile(unit)),
                         tostring(isFighting(unit)),
+                        tostring(qualifies(unit)),
                         tostring(tracked[unit] ~= nil)))
         end
     end

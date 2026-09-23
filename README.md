@@ -16,8 +16,11 @@ named `ARDM`; the addon list shows the localised name.
   engaged. An enemy counts as engaged only while it is in combat **and** you
   hold threat on it, so the grid stays limited to your own fight. Idle enemies,
   other people's pulls and targets that never take the combat flag (training
-  dummies) are skipped; `/ardm combat` turns the filter off. The grid is pinned
-  by its top-left corner and grows right, then down.
+  dummies) are skipped; `/ardm combat` turns the filter off. During a boss
+  encounter the threat requirement is dropped, so adds the boss summons get a
+  square as soon as they are in combat and can be attacked, even before you hit
+  them or when they ignore threat altogether. The grid is pinned by its top-left corner and grows
+  right, then down.
 - **DoT status** — a square turns red when the enemy has both
   Garrote (spell 703) and Rupture (spell 1943) applied.
 - **Minimap button** — left-click locks/unlocks the anchor, right-click resets
@@ -68,7 +71,9 @@ addon only controls how it looks, never what it knows.
   战斗中,它的方格就不会移动。敌人必须**同时**处于战斗中且你对它有仇恨才算
   交战,因此方格只包含你自己在打的目标。发呆的怪、别人在打的怪,以及从不带
   战斗标志的目标(训练假人)都不会占位;可用 `/ardm combat` 关闭该过滤。
-  方格以左上角为锚点固定,先向右、再向下增长。
+  首领战期间不要求仇恨:首领召唤的仆从只要可以被攻击、处于战斗中就会显示方格,
+  即使你还没打到它,或它根本不吃仇恨。方格以左上角为锚点固定,先向右、再向下
+  增长。
 - **DoT 状态** — 敌人同时带有绞喉(法术 703)与割裂(法术 1943)时方格变红。
 - **小地图按钮** — 左键锁定/解锁锚点,右键重置位置。解锁时会显示拖动手柄和
   一整行预览方格,方便在非战斗状态下调整位置。

@@ -14,28 +14,7 @@ combat. A square is white by default and turns
 red when that enemy has **both** Garrote (703) and Rupture (1943) applied. A
 minimap button locks/unlocks a drag anchor.
 
-## Directory layout
-
-```
-ardm/                            ← repo root
-├── README.md                    EN + zhCN
-├── CHANGELOG.md                 bilingual entries per version
-├── CLAUDE.md                    ← you are here
-├── release.sh                   bash script → ARDM-v<VER>.zip
-├── tools/make_icon.py           rebuilds Media/Icon.tga (uv run tools/make_icon.py)
-├── .claude/commands/release.md  Claude command that drives releases
-└── ARDM/                        ← shippable addon folder
-    ├── ARDM.toc                 load order lives here
-    ├── Init.lua                 ns namespace, locale metatable, /ardm slash
-    ├── Config.lua               tracked spell IDs, spec ID, SavedVariables defaults
-    ├── Locales/                 enUS.lua (default), zhCN.lua, zhTW.lua
-    ├── Media/Icon.tga           addon-list + minimap icon (generated, see below)
-    ├── Modules/
-    │   ├── Tracker.lua          game state: spec, combat, nameplates, DoT check
-    │   ├── Display.lua          square grid + drag anchor
-    │   └── Minimap.lua          LibDBIcon launcher
-    └── Libs/                    LibStub, CallbackHandler, LibDataBroker, LibDBIcon
-```
+## Shipping
 
 Only the inner `ARDM/` folder ships; `release.sh` packages nothing else.
 
@@ -61,13 +40,8 @@ before `Init.lua` because `Init.lua` builds `ns.L` from `ns.locales`.
 Every file starts with `local addonName, ns = ...`. Never use raw globals
 except the SavedVariable `ARDMDB`.
 
-Modules register with `ns:RegisterModule("<id>", M)` and may implement:
-
-```lua
-function M:OnDBReady()      -- ADDON_LOADED, db initialised
-function M:OnPlayerLogin()  -- PLAYER_LOGIN
-function M:Refresh()        -- ns:RefreshAll() after any state/option change
-```
+Modules register with `ns:RegisterModule("<id>", M)` and may implement the
+`OnDBReady` / `OnPlayerLogin` / `Refresh` hooks (see `Init.lua`).
 
 Do not create per-file bootstrap frames for `PLAYER_LOGIN`; use
 `OnPlayerLogin`.
@@ -75,20 +49,25 @@ Do not create per-file bootstrap frames for `PLAYER_LOGIN`; use
 ### State flow
 
 `Modules/Tracker.lua` is the only file that calls game APIs for combat,
-nameplates and auras. It publishes into `ns.state`:
+nameplates and auras. It publishes `ns.state` (`eligible`, `inCombat`,
+`units` oldest first).
 
-```lua
-ns.state = {
-    eligible = bool,   -- Assassination Rogue
-    inCombat = bool,
-    units    = {...},  -- tracked nameplate unit tokens, oldest first
-}
-```
+Tracker keeps two sets: `plates` (every nameplate on screen, hostile or not)
+and `tracked` (the plates that currently deserve a square). A plate enters
+`tracked` only while `UnitCanAttack` says the player can attack it and, with
+`db.combatOnly` on — the default — only while it looks engaged, so idle mobs
+standing in range do not pad the grid.
 
-Tracker keeps two sets: `plates` (every hostile nameplate on screen) and
-`tracked` (the plates that currently deserve a square). With `db.combatOnly`
-on — the default — a plate enters `tracked` only while it looks engaged, so
-idle mobs standing in range do not pad the grid.
+**Hostility is re-checked, not settled on arrival.** Boss summons routinely
+spawn unattackable (spawn animation, immunity window, a faction that flips once
+they engage), so a plate that fails `UnitCanAttack` stays in `plates` and is
+re-evaluated on `UNIT_FLAGS` / `UNIT_FACTION`. Dropping such a plate at
+`NAME_PLATE_UNIT_ADDED` means the add never gets a square, because every later
+event is ignored for units not in `plates`.
+Hostility gates *entry* only: a tracked enemy that turns unattackable mid-fight
+(an immune intermission) keeps its square, and leaving is decided by engagement
+alone, through the grace below. `qualifies()` in `Tracker.lua` encodes both
+rules.
 
 Engagement requires **both** signals:
 
@@ -100,6 +79,18 @@ alone lets in enemies whose fight the player has already left. The known cost
 of the conjunction is that **enemies which never take the combat flag never get
 a square — training dummies among them**; that is a deliberate trade, not a
 bug, and `/ardm combat` switches the filter off wholesale.
+
+**During a boss encounter the threat signal is waived** (combat flag only).
+Boss summons are what it misses: many have no threat table at all (fixating
+adds, spawns that ignore threat), and the rest list the player only after the
+first hit. Adds cannot be told apart from other enemies through the API, so the
+waiver is scoped by encounter rather than by unit; an encounter is one fight,
+so it has no somebody-else's-pull to filter. Dungeon trash keeps the threat
+requirement. `inEncounter` follows `ENCOUNTER_START` / `ENCOUNTER_END`, which
+re-check every plate (leaving goes through grace), and is re-read from
+`C_InstanceEncounter.IsEncounterInProgress` (pre-12 global as fallback) on
+`PLAYER_ENTERING_WORLD` and eligibility changes, where the events may have been
+missed.
 
 `UnitAffectingCombat` is not one of the unit APIs 12.x made secret, and
 `UnitThreatSituation` is exempt for a player-against-nameplate pair
@@ -188,12 +179,14 @@ Two orderings people ask for are **not implementable**, and both were tried:
 The renderer runs while the player is fighting, so keep these:
 
 - Nothing polls. Membership changes only on `NAME_PLATE_UNIT_ADDED` /
-  `NAME_PLATE_UNIT_REMOVED` and, for the combat-state filter, on `UNIT_FLAGS` /
-  `UNIT_THREAT_LIST_UPDATE`; there is no `OnUpdate` and no ticker. Those two
-  unit events are the only signals that an enemy already on screen entered or
-  left combat, and both carry nameplate tokens. They are registered only while
-  the player is fighting, are dropped in O(1) for units that are not tracked
-  plates, and re-render only on an actual transition.
+  `NAME_PLATE_UNIT_REMOVED` and, for an enemy already on screen, on
+  `UNIT_FLAGS` / `UNIT_FACTION` / `UNIT_THREAT_LIST_UPDATE`, plus one sweep
+  over `plates` on `ENCOUNTER_START` / `ENCOUNTER_END`; there is no
+  `OnUpdate` and no ticker. Those three unit events are the only signals that
+  an enemy entered or left combat or became attackable, and all carry
+  nameplate tokens. They are registered only while the player is fighting, are
+  dropped in O(1) for units that are not nameplates, and re-render only on an
+  actual transition.
 - The one timer is the combat grace: a single one-shot `C_Timer.After` shared
   by every pending unit, armed only when an enemy actually leaves combat and
   re-armed only while `graceUntil` is non-empty. Grace is a constant, so
@@ -249,21 +242,7 @@ to change between sessions: slots cache their size and grid position.
 - Comment *why*, not *what*. No "added for X" / "fixed in Y" in source.
 - No hardcoded Chinese/English in module bodies.
 
-## Slash commands
-
-`/ardm` toggles lock. Sub-commands: `lock`, `unlock`, `reset`, `combat`
-(show every enemy nameplate vs. only those in combat), `minimap`, `debug`
-(event trace in chat), `probe` (one-shot dump of what the client returns for
-each nameplate).
-
 ## Release workflow
 
-Driven by `.claude/commands/release.md`:
-
-1. Read `## Version:` from `ARDM/ARDM.toc`.
-2. Add a bilingual (EN + zhCN) entry to `CHANGELOG.md` under `## v<VER>`.
-3. `bash release.sh` → `ARDM-v<VER>.zip` at repo root.
-4. Commit `release: v<VER>` and tag `v<VER>` (no push).
-5. Bump `## Version:` to the next minor, commit `chore: bump version to <NEW>`.
-
-Uploads to CurseForge/WoWInterface are manual.
+Run `/release` (`.claude/commands/release.md`). Uploads to
+CurseForge/WoWInterface are manual.
