@@ -1,4 +1,4 @@
-## Interface: 120100
+## Interface: 120105
 ## Title: ARDM
 ## Title-zhCN: 刺杀盗贼流血监控
 ## Title-zhTW: 刺殺盜賊流血監控

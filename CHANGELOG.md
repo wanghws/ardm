@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.2.0
+
+- Updated for World of Warcraft 12.1.5. The addon no longer shows up as
+  out of date, and nothing changes in how it works.
+- 适配魔兽世界 12.1.5,插件不再显示为"已过期",功能和用法均无变化。
+
 ## v1.1.0
 
 - Adds that a boss summons now get a square: an enemy that appears before it
